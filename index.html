@@ -571,9 +571,9 @@ textarea { font: inherit; }
 <div class="pk-backdrop" id="pwd" hidden>
   <form class="pwcard" id="pwd-form" role="dialog" aria-modal="true" aria-labelledby="pwd-title">
     <div class="row"><h2 id="pwd-title">Change password</h2><button type="button" class="btn ghost" id="pwd-close">Close</button></div>
-    <p class="note">Optional. You can keep using the current password. Changing it only affects this demo on this device.</p>
+    <p class="note" id="pwd-note">The new password works on every device of this branch (reception and tablets). Tablets already set up stay connected.</p>
     <div class="field"><label for="pwd-old">Current password</label><input id="pwd-old" type="password" inputmode="numeric" autocomplete="off"></div>
-    <div class="field"><label for="pwd-new">New password (at least 4 characters)</label><input id="pwd-new" type="password" autocomplete="off"></div>
+    <div class="field"><label for="pwd-new">New password (at least 6 characters)</label><input id="pwd-new" type="password" autocomplete="off"></div>
     <div class="field"><label for="pwd-new2">Type the new password again</label><input id="pwd-new2" type="password" autocomplete="off"></div>
     <p class="warn" id="pwd-msg" hidden></p>
     <div class="row"><button type="submit" class="btn">Save new password</button></div>
@@ -4291,16 +4291,19 @@ three/build/three.module.js:
 (function () {
   if (!(window.google && google.script && google.script.run)) return;
   var st = { ok: false, tried: false, fails: 0 };
+  /* staff screens carry a token from a server-checked branch password (saved on this device) */
+  var tok = function () { try { return localStorage.getItem("sc-tok") || null; } catch (e) { return null; } };
   var viaFetch = function (fn, a) {
-    return fetch(window.SC_EXEC, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ fn: fn, args: a }) })
+    return fetch(window.SC_EXEC, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ fn: fn, args: a, tok: tok() }) })
       .then(function (r) { return r.json(); }).then(function (j) { if (!j.ok) throw new Error(j.error); return j.result; });
   };
-  var viaRun = function (fn, a) { return new Promise(function (res, rej) { google.script.run.withSuccessHandler(res).withFailureHandler(rej)[fn].apply(null, a); }); };
+  var viaRun = function (fn, a) { return new Promise(function (res, rej) { google.script.run.withSuccessHandler(function (j) { if (j && j.ok) res(j.result); else rej(new Error(j ? j.error : "no answer")); }).withFailureHandler(rej).api({ fn: fn, args: a, tok: tok() }); }); };
   var run = function (fn) {
     var a = [].slice.call(arguments, 1);
     var p = (window.SC_EXEC && window.fetch) ? viaFetch(fn, a).catch(function (e) { return viaRun(fn, a); }) : viaRun(fn, a);
     return p.then(function (r) { st.ok = true; st.tried = true; st.fails = 0; return r; }, function (e) { st.ok = false; st.tried = true; st.fails++; throw e; });
   };
+  window.SC_AUTH = function (fn, a) { return run.apply(null, [fn].concat(a || [])); };
   var clone = function (o) { return o == null ? o : JSON.parse(JSON.stringify(o)); };
   var docs = {}, logDocs = {}, subs = [], ver = -1, ready = false, pending = [], flushing = false, lastLog = 0, logBusy = false;
   var notify = function () { subs.slice().forEach(function (f) { try { f(); } catch (e) {} }); };
@@ -4317,21 +4320,24 @@ three/build/three.module.js:
   function push(op) { pending.push(op); flush(); }
 
   /* how often to check: screens can ask for a slower pace (idle room tablets); a tap checks at once */
-  var timer = null, inFlight = false;
+  var timer = null, inFlight = false, lastTok = tok(), needLog = false;
   function later(ms) { clearTimeout(timer); timer = setTimeout(poll, ms); }
-  window.SC_POKE = function () { if (!inFlight && ready) later(0); };
+  var again = false;
+  window.SC_POKE = function () { if (!ready) return; if (inFlight) { again = true; return; } later(0); };   /* a check already running: check once more right after it */
   function poll() {
     if (pending.length || flushing) { later(800); return; }
     inFlight = true;
-    run("sync", ver).then(function (r) {
+    var t = tok(); if (t !== lastTok) { lastTok = t; ver = -1; needLog = true; }   /* signed in / out: fetch what this screen may see */
+    run("sync", ver, window.SC_GB || null).then(function (r) {
       if (r.ver !== ver) {
         if (r.docs) { docs = {}; r.docs.forEach(function (d) { docs[d.path] = d.data; }); }
         ver = r.ver;
       }
-      var first = !ready; ready = true; if (first) refreshLog(true);
+      var first = !ready; ready = true; if (first || needLog) { needLog = false; refreshLog(true); }
       notify();
     }).catch(function () {}).then(function () {
       inFlight = false;
+      if (again) { again = false; later(0); return; }
       var pace = 3000; try { if (window.SC_POLL_MS) pace = window.SC_POLL_MS() || 3000; } catch (e) {}
       later(document.hidden ? Math.max(15000, pace) : pace);   /* pace decided after the screen has the new data */
     });
@@ -4398,13 +4404,13 @@ three/build/three.module.js:
   };
   const VIEWS = { rooms: "Rooms", checkin: "Check-in", staff: "Staff schedule", log: "Visit log", team: "Team and access", mine: "My schedule" };
   const ACCOUNTS = [
-    { id: "owner", name: "Owner", role: "owner", branch: null, pw: "123456" },
-    { id: "restaurant", name: "Restaurant Street", role: "branch", branch: "restaurant", pw: "123456" },
-    { id: "mangaf", name: "Mangaf", role: "branch", branch: "mangaf", pw: "123456" },
-    { id: "qatar", name: "Qatar Street", role: "branch", branch: "qatar", pw: "123456" },
-    { id: "sabah", name: "Sabah Al Salem", role: "branch", branch: "sabah", pw: "123456" },
-    { id: "farwaniya", name: "Farwaniya", role: "branch", branch: "farwaniya", pw: "123456" },
-    { id: "jahra", name: "Jahra", role: "branch", branch: "jahra", pw: "123456" }
+    { id: "owner", name: "Owner", role: "owner", branch: null },
+    { id: "restaurant", name: "Restaurant Street", role: "branch", branch: "restaurant" },
+    { id: "mangaf", name: "Mangaf", role: "branch", branch: "mangaf" },
+    { id: "qatar", name: "Qatar Street", role: "branch", branch: "qatar" },
+    { id: "sabah", name: "Sabah Al Salem", role: "branch", branch: "sabah" },
+    { id: "farwaniya", name: "Farwaniya", role: "branch", branch: "farwaniya" },
+    { id: "jahra", name: "Jahra", role: "branch", branch: "jahra" }
   ];
   const branchLogo = id => id === "farwaniya" ? LOGO_WOMEN : LOGO;
   const CATS = [
@@ -4733,10 +4739,10 @@ const defFig=b=>b==="farwaniya"?"f":"m";
     const btn = a => '<button type="button" class="acc" data-pick="' + a.id + '" aria-pressed="' + (state.loginPick === a.id) + '">' + esc(a.name) + '</button>';
     const form = pick ? '<form id="login-form" class="loginform"><div class="field"><label for="pw">Password for ' + esc(pick.name) + '</label>' +
       '<input id="pw" type="password" inputmode="numeric" autocomplete="new-password" autocapitalize="none" autocorrect="off" spellcheck="false"></div>' +
-      (state.loginErr ? '<p class="warn">That password is not right for ' + esc(pick.name) + '.</p>' : '') +
+      (state.loginErr ? '<p class="warn">' + (state.loginErr === "net" ? 'No connection. Check the internet and try again.' : 'That password is not right for ' + esc(pick.name) + '.') + '</p>' : '') +
       '<div class="row"><button type="submit" class="btn">Sign in</button></div>' +
-      '<p class="note">' + (pwStore[pick.id] ? 'You changed this password on this device.' : 'Demo only. The password for every login is <b>' + PW_DEFAULT + '</b>.') + ' In the live version you choose the real password, and it is stored securely, never in the page.</p>' +
-      '<div class="row"><button type="button" class="btn ghost" id="login-reset">Reset all passwords to ' + PW_DEFAULT + '</button></div></form>' : '';
+      '<p class="note">Ask the manager for your branch password.</p>' +
+      '</form>' : '';
     $("login").innerHTML = '<div class="login-card"><div class="login-brand"><img class="logo" alt="Spa Corner" src="' + logo + '"></div>' +
       '<div class="login-body"><div><h1>Sign in</h1><p class="note">Each branch has its own password. Choose your branch, then type its password.</p></div>' +
       '<div class="acc-group"><h3>Branch</h3><div class="acc-list">' + ACCOUNTS.filter(a => a.role === "branch").map(btn).join("") + '</div></div>' +
@@ -4754,7 +4760,7 @@ const defFig=b=>b==="farwaniya"?"f":"m";
     render();
     window.scrollTo(0, 0);
   }
-  function signOut() { state.user = null; state.loginPick = null; state.loginErr = false; state.room = null; state.draft = null; render(); window.scrollTo(0, 0); }
+  function signOut() { lsSet("sc-tok", null); state.mustPw = false; state.user = null; state.loginPick = null; state.loginErr = false; state.room = null; state.draft = null; render(); window.scrollTo(0, 0); }
 
   function renderChrome() {
     const u = state.user, role = ROLES[u.role];
@@ -5126,7 +5132,7 @@ const defFig=b=>b==="farwaniya"?"f":"m";
     if (e.target.id !== "login-form") return;
     e.preventDefault();
     const acc = ACCOUNTS.find(a => a.id === state.loginPick);
-    if (acc && $("pw").value.trim() === pwOf(acc)) { state.loginErr = false; signIn(acc.id); }
+    if (acc) { pwCheck(acc.id, $("pw").value).then(r => { if (r.ok) { state.loginErr = false; state.mustPw = !!r.mustChange; signIn(acc.id); if (r.mustChange) setTimeout(pwdForce, 60); } else { state.loginErr = r.err === "net" ? "net" : true; renderLogin(); } }); }
     else { state.loginErr = true; renderLogin(); }
   });
   let resetArmed = null;
@@ -5141,8 +5147,8 @@ const defFig=b=>b==="farwaniya"?"f":"m";
   document.addEventListener("click", e => {
     if (e.target.closest("#login-reset")) { pwStore = {}; savePw(); renderLogin(); }
   });
-  const pwdOpen = () => { $("pwd-form").reset(); const m = $("pwd-msg"); m.hidden = true; $("pwd").hidden = false; $("pwd-old").focus(); };
-  const pwdClose = () => { $("pwd").hidden = true; };
+  const pwdOpen = () => { $("pwd-form").reset(); $("pwd-title").textContent = "Change password"; $("pwd-note").textContent = "The new password works on every device of this branch (reception and tablets). Tablets already set up stay connected."; const m = $("pwd-msg"); m.hidden = true; $("pwd").hidden = false; $("pwd-old").focus(); };
+  const pwdClose = () => { if (state.mustPw) return; $("pwd").hidden = true; };
   $("chpw").addEventListener("click", pwdOpen);
   $("pwd-close").addEventListener("click", pwdClose);
   $("pwd").addEventListener("click", e => { if (e.target === $("pwd")) pwdClose(); });
@@ -5152,11 +5158,11 @@ const defFig=b=>b==="farwaniya"?"f":"m";
     const m = $("pwd-msg"), u = state.user, a = $("pwd-old").value.trim(), b = $("pwd-new").value, c = $("pwd-new2").value;
     const say = (t, ok) => { m.textContent = t; m.className = ok ? "ok" : "warn"; m.hidden = false; };
     if (!u) return;
-    if (a !== pwOf(u)) return say("The current password is not right.", false);
-    if (b.length < 4) return say("The new password needs at least 4 characters.", false);
+    if (b.length < 6 || b === "123456") return say("Choose a new password of at least 6 characters (not 123456).", false);
     if (b !== c) return say("The two new passwords do not match.", false);
-    pwStore[u.id] = b; savePw();
-    say("Done. Use the new password next time you sign in.", true);
+    say("Saving…", true);   /* checked and saved on the server; works on every device of the branch */
+    window.SC_AUTH("setpw", [u.id, a, b]).then(r => { if (r && r.ok) { lsSet("sc-tok", r.tok); state.mustPw = false; say("Done. The new password now works on every device of " + u.name + ".", true); setTimeout(() => { $("pwd").hidden = true; }, 1800); } else say(r && r.err === "old" ? "The current password is not right." : "That new password can't be used. Choose at least 6 characters.", false); },
+      () => say("Could not save. Check the internet and try again.", false));
   });
   $("pk-close").addEventListener("click", closePicker);
   $("pk-done").addEventListener("click", closePicker);
@@ -5481,7 +5487,7 @@ const defFig=b=>b==="farwaniya"?"f":"m";
     const tr = e.target.closest("[data-tr]"); if (tr) { tab.pRoom = Number(tr.getAttribute("data-tr")); tab.pErr = false; tabRender(); return; }
     const tl = e.target.closest("[data-tl]"); if (tl) { tab.lang = tl.getAttribute("data-tl"); tabRender(); return; }
     if (e.target.closest("#tmclose")) { tab.menu = false; tab.mErr = false; tabRender(); return; }
-    if (e.target.closest("#tmok")) { const acc = tab.pair && ACCOUNTS.find(a => a.id === tab.pair.branch), f = $("tmpw"); if (acc && f && f.value.trim() === pwOf(acc)) { tab.menu = "open"; tab.mErr = false; } else tab.mErr = true; tabRender(); return; }
+    if (e.target.closest("#tmok")) { const acc = tab.pair && ACCOUNTS.find(a => a.id === tab.pair.branch), f = $("tmpw"); if (acc && f) { pwCheck(acc.id, f.value).then(r => { if (r.ok) { tab.menu = "open"; tab.mErr = false; } else tab.mErr = true; tabRender(); }); return; } tab.mErr = true; tabRender(); return; }
     if (e.target.closest("#tback")) { tab.menu = false; if (tab.unsub) { tab.unsub(); tab.unsub = null; } setMode(""); return; }
     if (e.target.closest("#tunpair")) { tab.menu = false; tab.pair = null; tab.pRoom = null; tab.pErr = false; lsSet("sc-tablet", null); tabSubscribe(); tabRender(); return; }
     const st = e.target.closest("[data-star]"); if (st) { tab.rating = Number(st.getAttribute("data-star")); const c = $("tcomment"); if (c) tab.comment = c.value; tabRender(); return; }
@@ -5503,8 +5509,8 @@ const defFig=b=>b==="farwaniya"?"f":"m";
     if (e.target.id !== "tpair") return;
     e.preventDefault();
     const acc = ACCOUNTS.find(a => a.id === tab.pBranch), pw = $("tpw");
-    if (acc && tab.pRoom && pw && pw.value.trim() === pwOf(acc)) {
-      tab.pair = { branch: tab.pBranch, room: tab.pRoom }; tab.pErr = false; lsSet("sc-tablet", JSON.stringify(tab.pair)); tabSubscribe();
+    if (acc && tab.pRoom && pw) { const room = tab.pRoom; pwCheck(acc.id, pw.value).then(r => { if (r.ok) { tab.pair = { branch: acc.id, room: room }; tab.pErr = false; lsSet("sc-tablet", JSON.stringify(tab.pair)); tabSubscribe(); } else tab.pErr = true; tabRender(); });
+      return;
     } else tab.pErr = true;
     tabRender();
   });
@@ -5779,7 +5785,7 @@ const defFig=b=>b==="farwaniya"?"f":"m";
         gs.lastDone = c.id; gs.thanksName = displayName(c, "ar"); gs.thanksNameEn = displayName(c, "en"); gs.thanksUntil = Date.now() + 9000; gs.ci = null; gs.prefs = null; if (gs.phone) gs.finished = true; gstSync(); return;
       }
       case "gmclose": gs.menu = false; gs.mErr = false; gstRender(); return;
-      case "gmok": { const acc = ACCOUNTS.find(a => a.id === gs.branch), f = $("gmpw"); if (acc && f && f.value.trim() === pwOf(acc)) { gs.menu = "open"; gs.mErr = false; } else gs.mErr = true; gstRender(); return; }
+      case "gmok": { const acc = ACCOUNTS.find(a => a.id === gs.branch), f = $("gmpw"); if (acc && f) { pwCheck(acc.id, f.value).then(r => { if (r.ok) { gs.menu = "open"; gs.mErr = false; } else gs.mErr = true; gstRender(); }); return; } gs.mErr = true; gstRender(); return; }
       case "gback": gs.menu = false; setMode(""); return;
       case "gunpair": gs.menu = false; gs.branch = null; gs.pB = null; gs.pErr = false; gs.ci = null; lsSet("sc-gst", null); gstRender(); return;
     }
@@ -5788,7 +5794,7 @@ const defFig=b=>b==="farwaniya"?"f":"m";
     if (mode !== "gst" || e.target.id !== "gpair") return;
     e.preventDefault();
     const acc = ACCOUNTS.find(a => a.id === gs.pB), pw = $("gpw");
-    if (acc && pw && pw.value.trim() === pwOf(acc)) { gs.branch = gs.pB; gs.pErr = false; lsSet("sc-gst", gs.branch); gstSync(); return; }
+    if (acc && pw) { pwCheck(acc.id, pw.value).then(r => { if (r.ok) { gs.branch = acc.id; gs.pErr = false; lsSet("sc-gst", gs.branch); gstSync(); } else { gs.pErr = true; gstRender(); } }); return; }
     gs.pErr = true; gstRender();
   });
   $("tablet").addEventListener("input", e => {
@@ -5814,7 +5820,7 @@ const defFig=b=>b==="farwaniya"?"f":"m";
         gs.phone = false; gs.branch = p.d; gs.pB = null; gs.menu = false; lsSet("sc-gst", p.d); setMode("gst"); return;
       }
       if (p && branchObj(p.g)) {   /* printed QR at reception: the guest's own phone opens the form straight away (nothing saved on the phone) */
-        gs.phone = true; gs.branch = p.g; gs.pB = null; gs.menu = false; mode = "gst"; showMode(); gstSync(); return;
+        window.SC_GB = p.g; gs.phone = true; gs.branch = p.g; gs.pB = null; gs.menu = false; mode = "gst"; showMode(); gstSync(); return;
       }
       if (p && branchObj(p.t) && Number(p.r) >= 1 && Number(p.r) <= branchObj(p.t).rooms) {   /* room QR: ?t=<branch>&r=<room> sets this tablet up as that room (password once) */
         const r = Number(p.r);
@@ -5848,6 +5854,38 @@ const defFig=b=>b==="farwaniya"?"f":"m";
     if (mode === "rec") return state.user && state.branch && ciOf(state.branch).some(c => c.st === "sent") ? 1000 : 3000;
     return 3000;
   };
+
+  /* ---------- Passwords are checked by the server (never in this public page) ----------
+     A correct branch password returns a token that this device keeps; staff screens send it with every call.
+     Until a branch chooses its own password, 123456 still works, and reception must then choose a new one. */
+  function pwCheck(accId, pw) {
+    if (!window.SC_AUTH) return Promise.resolve({ ok: false, err: "net" });
+    return window.SC_AUTH("login", [accId, String(pw || "").trim()]).then(r => {
+      r = r || { ok: false, err: "pw" };
+      if (r.ok && r.tok) { lsSet("sc-tok", r.tok); if (window.SC_POKE) window.SC_POKE(); }
+      return r;
+    }, () => ({ ok: false, err: "net" }));
+  }
+  function pwdForce() {
+    pwdOpen();
+    $("pwd-old").value = "123456";
+    $("pwd-title").textContent = "Choose your branch password";
+    $("pwd-note").textContent = "First sign-in: choose a new password for " + (state.user ? state.user.name : "this branch") + ". It replaces 123456 on every device of this branch. Tablets already set up stay connected.";
+    $("pwd-new").focus();
+  }
+  /* Room tablets set up before passwords moved to the server: connect them once with the starting password.
+     If the branch has already chosen its own password, the tablet goes back to its setup screen. */
+  (function authBoot() {
+    const go = () => {
+      if (lsGet("sc-tok") || mode !== "tab" || !tab.pair) return;
+      pwCheck(tab.pair.branch, "123456").then(r => {
+        if (r.ok) return;
+        if (r.err === "net") { setTimeout(go, 30000); return; }
+        tab.pair = null; tab.pRoom = null; lsSet("sc-tablet", null); tabSubscribe(); tabRender();
+      });
+    };
+    setTimeout(go, 1500);
+  })();
   /* connect to the shared database, then start */
   setInterval(setLive, 2000);
   (async function connect() {
