@@ -252,7 +252,7 @@ h1 { margin: 2px 0 0; font-family: var(--font-display); font-weight: 400; font-s
 .logtable th { text-align: left; font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); padding: 8px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
 .logtable td { padding: 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
 .stars-s { color: var(--accent); letter-spacing: 1px; }
-#tablet { user-select: none; -webkit-user-select: none; touch-action: manipulation; overscroll-behavior: none; }
+#tablet { user-select: none; -webkit-user-select: none; touch-action: manipulation; overscroll-behavior: none; } #tablet img { -webkit-user-drag: none; user-drag: none; -webkit-touch-callout: none; } #tablet .tlogo img { pointer-events: none; }
 #tablet input, #tablet textarea { user-select: text; -webkit-user-select: text; }
 #tablet .tstaff { position: absolute; inset: 0; background: rgba(0,0,0,.82); display: grid; place-items: center; z-index: 20; }
 #tablet .tstaffbox { background: #1a1718; border: 1px solid var(--accent); border-radius: 12px; padding: 22px; display: grid; gap: 14px; min-width: 280px; }
@@ -5499,7 +5499,7 @@ const defFig=b=>b==="farwaniya"?"f":"m";
         (tab.menu ? '<div class="tstaff" dir="ltr" lang="en"><div class="tstaffbox"><h2>Staff menu</h2>' +
           (tab.menu === "pw" ? '<input id="tmpw" type="password" inputmode="numeric" autocomplete="off" aria-label="Branch password">' + (tab.mErr ? '<p class="twarn">That password is not right.</p>' : "") +
             '<div class="row"><button type="button" class="tbtn" id="tmok">OK</button><button type="button" class="tskip" id="tmclose">Cancel</button></div>'
-          : '<div class="row"><button type="button" class="tbtn" id="tunpair">Switch room</button><button type="button" class="tbtn" id="tback">Back to start</button><button type="button" class="tskip" id="tmclose">Close</button></div>') + '</div></div>' : "");
+          : '<p class="note" style="margin:0 0 10px">Screen stays on: ' + (window.SC_AWAKE ? window.SC_AWAKE() : "unknown") + '</p><div class="row"><button type="button" class="tbtn" id="tunpair">Switch room</button><button type="button" class="tbtn" id="tback">Back to start</button><button type="button" class="tskip" id="tmclose">Close</button></div>') + '</div></div>' : "");
     }
     const kv = ["tpw", "tmpw"].map(id => { const n = $(id); return n ? [id, n.value] : null; }).filter(Boolean);
     el.innerHTML = '<div class="tscreen">' + html + '</div>' + tabModal() + (tab.toast ? '<div class="ttoast" role="status">' + esc(tab.toast) + '</div>' : "");
@@ -5779,7 +5779,7 @@ const defFig=b=>b==="farwaniya"?"f":"m";
     } else html = gstHead() + '<section class="hello"><p class="eyebrow">Spa Corner</p><h1 dir="rtl" lang="ar">' + (fem() ? "أهلاً بكِ في سبا كورنر" : "أهلاً بك في سبا كورنر") + '</h1><h1>Welcome to Spa Corner</h1></section>';
     if (gs.menu) html += '<div class="tstaff" dir="ltr" lang="en"><div class="tstaffbox"><h2>Staff menu</h2>' + (gs.menu === "pw" ? '<input id="gmpw" type="password" inputmode="numeric" autocomplete="off" aria-label="Branch password">' + (gs.mErr ? '<p class="twarn">That password is not right.</p>' : "") +
       '<div class="row"><button type="button" class="tbtn" id="gmok">OK</button><button type="button" class="tskip" id="gmclose">Cancel</button></div>' :
-      '<p class="note" style="margin:0 0 10px">3D body: ' + (B3.usable() ? "working" : "not available (" + B3.why() + ")") + '</p><div class="row"><button type="button" class="tbtn" id="gunpair">Switch branch</button><button type="button" class="tbtn" id="gback">Back to start</button><button type="button" class="tskip" id="gmclose">Close</button></div>') + '</div></div>';
+      '<p class="note" style="margin:0 0 10px">3D body: ' + (B3.usable() ? "working" : "not available (" + B3.why() + ")") + ' · Screen stays on: ' + (window.SC_AWAKE ? window.SC_AWAKE() : "unknown") + '</p><div class="row"><button type="button" class="tbtn" id="gunpair">Switch branch</button><button type="button" class="tbtn" id="gback">Back to start</button><button type="button" class="tskip" id="gmclose">Close</button></div>') + '</div></div>';
     const kv = ["gpw", "gmpw"].map(id => { const n = $(id); return n ? [id, n.value] : null; }).filter(Boolean);
     el.innerHTML = '<div class="tscreen gst">' + html + '</div><div class="gcorner" aria-hidden="true"></div>';
     el.scrollTop = keepScroll;
@@ -5914,6 +5914,27 @@ const defFig=b=>b==="farwaniya"?"f":"m";
       });
     };
     setTimeout(go, 1500);
+  })();
+
+  /* Room and desk tablets: never let a long press start dragging the logo (Android tablets do this, and it cancels the hidden staff hold). */
+  document.addEventListener("dragstart", e => { if (mode === "tab" || (mode === "gst" && !gs.phone)) e.preventDefault(); }, true);
+
+  /* Keep room and desk tablets awake: the screen does not dim or sleep while this page is open (Screen Wake Lock, Chrome 84+).
+     The lock is dropped by the browser whenever the page is hidden, so it is taken again on return, on every touch and every 15 s. */
+  (function keepAwake() {
+    let lock = null, state = "wakeLock" in navigator ? "starting" : "not supported by this browser";
+    const want = () => document.visibilityState === "visible" && ((mode === "tab" && !!tab.pair) || (mode === "gst" && !!gs.branch && !gs.phone));
+    const take = async () => {
+      if (lock || !want() || !("wakeLock" in navigator)) return;
+      try { lock = await navigator.wakeLock.request("screen"); state = "yes"; lock.addEventListener("release", () => { lock = null; if (state === "yes") state = "paused"; }); }
+      catch (e) { lock = null; state = "no (" + (e && e.name || "blocked") + ")"; }
+    };
+    const drop = () => { if (lock && !want()) { const l = lock; lock = null; state = "off"; l.release().catch(() => {}); } };
+    window.SC_AWAKE = () => (lock ? "yes" : state);
+    document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") take(); });
+    document.addEventListener("pointerdown", () => { take(); }, true);
+    setInterval(() => { if (want()) take(); else drop(); }, 15000);
+    setTimeout(take, 1000);
   })();
   /* connect to the shared database, then start */
   setInterval(setLive, 2000);
