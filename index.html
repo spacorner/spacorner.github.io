@@ -4462,9 +4462,9 @@ three/build/three.module.js:
   const STAFF_OF = bid => (staffNames[bid] && staffNames[bid].length ? staffNames[bid] : STAFF_DEFAULT);
   const BRANCHES = [
     { id: "restaurant", name: "Restaurant Street", rooms: 12 },
-    { id: "mangaf", name: "Mangaf", rooms: 9 },
+    { id: "mangaf", name: "Mangaf", rooms: 12, noSpare: true },
     { id: "qatar", name: "Qatar Street", rooms: 9 },
-    { id: "sabah", name: "Sabah Al Salem", rooms: 9 },
+    { id: "sabah", name: "Sabah Al Salem", rooms: 12, noSpare: true },
     { id: "farwaniya", name: "Farwaniya", rooms: 8 },
     { id: "jahra", name: "Jahra", rooms: 9 }
   ];
@@ -4822,7 +4822,7 @@ const defFig=b=>b==="farwaniya"?"f":"m";
 
   function cardHtml(k, b) {
     const v = V()[k], h = H()[k], sel = state.room === k ? " sel" : "";
-    const tag = isRoom(k) && Number(k.slice(1)) === b.rooms ? "<em>Spare</em>" : "";
+    const tag = isRoom(k) && Number(k.slice(1)) === b.rooms && !b.noSpare ? "<em>Spare</em>" : "";
     const head = '<span class="rn">' + esc(lab(k)) + tag + '</span>';
     let cls = "free", body = '<span class="st">Free</span>';
     if (!h && !v) { const nb = nextBooking(state.branch, k); if (nb) { const gap = freeMin(nb); if (gap <= 0) cls = "free rsv"; body = '<span class="st">' + (gap > 0 ? 'Free for ' + dur(gap) : '<b>Reserved now</b>') + '</span><span class="st"><b>Next: ' + esc(nb.who) + ' ' + tfmt(nb.a) + ' – ' + tfmt(nb.b) + '</b></span>'; } }
