@@ -566,7 +566,7 @@ textarea { font: inherit; }
   </div>
   <nav class="branches" id="branches" aria-label="Branches"></nav>
   <!-- (production: test note removed) -->
-  <div id="app"></div>
+  <div id="batn"></div><div id="app"></div>
 </main>
 
 <div class="pk-backdrop" id="pwd" hidden>
@@ -4321,7 +4321,7 @@ three/build/three.module.js:
   function push(op) { pending.push(op); flush(); }
 
   /* how often to check: screens can ask for a slower pace (idle room tablets); a tap checks at once */
-  var timer = null, inFlight = false, lastTok = tok(), needLog = false;
+  var timer = null, inFlight = false, lastTok = tok(), needLog = false, devSig = "";
   function later(ms) { clearTimeout(timer); timer = setTimeout(poll, ms); }
   var again = false;
   window.SC_POKE = function () { if (!ready) return; if (inFlight) { again = true; return; } later(0); };   /* a check already running: check once more right after it */
@@ -4333,6 +4333,11 @@ three/build/three.module.js:
       if (r.ver !== ver) {
         if (r.docs) { docs = {}; r.docs.forEach(function (d) { docs[d.path] = d.data; }); }
         ver = r.ver;
+      }
+      if (r.dev) {   /* room tablet batteries (staff screens only) */
+        var sig = r.dev.map(function (d) { return d.b + d.r + ":" + d.l + d.c + (d.ago > 600 ? "x" : ""); }).sort().join("|");
+        window.SC_DEV = { rows: r.dev, got: Date.now() };
+        if (sig !== devSig) { devSig = sig; try { if (window.SC_ON_DEV) window.SC_ON_DEV(); } catch (e) {} }
       }
       var first = !ready; ready = true; if (first || needLog) { needLog = false; refreshLog(true); }
       notify();
@@ -4798,7 +4803,7 @@ const defFig=b=>b==="farwaniya"?"f":"m";
     $("title").textContent = VIEWS[state.view];
     $("views").hidden = role.views.length < 2;
     $("views").innerHTML = role.views.map(v => '<button type="button" data-view="' + v + '" aria-pressed="' + (state.view === v) + '">' + VIEWS[v] + (v === "checkin" && ciDone(state.branch).length ? " (" + ciDone(state.branch).length + ")" : "") + '</button>').join("");
-    $("branches").hidden = !role.all;
+    $("branches").hidden = !role.all; if (typeof batChrome === "function") batChrome();
     $("branches").innerHTML = role.all ? BRANCHES.map(b => {
       const used = Object.keys(V(b.id)).length + Object.keys(H(b.id)).length;
       return '<button type="button" class="branch" data-branch="' + b.id + '" aria-pressed="' + (state.branch === b.id) + '"><b>' + b.name + '</b><small>' + used + ' in use · ' + b.rooms + ' rooms</small></button>';
@@ -4823,7 +4828,8 @@ const defFig=b=>b==="farwaniya"?"f":"m";
   function cardHtml(k, b) {
     const v = V()[k], h = H()[k], sel = state.room === k ? " sel" : "";
     const tag = isRoom(k) && Number(k.slice(1)) === b.rooms && !b.noSpare ? "<em>Spare</em>" : "";
-    const head = '<span class="rn">' + esc(lab(k)) + tag + '</span>';
+    const pill = isRoom(k) ? batPill(Number(k.slice(1))) : "";
+    const head = '<span class="rn">' + (pill ? '<span class="rnm">' + esc(lab(k)) + tag + '</span>' + pill : esc(lab(k)) + tag) + '</span>';
     let cls = "free", body = '<span class="st">Free</span>';
     if (!h && !v) { const nb = nextBooking(state.branch, k); if (nb) { const gap = freeMin(nb); if (gap <= 0) cls = "free rsv"; body = '<span class="st">' + (gap > 0 ? 'Free for ' + dur(gap) : '<b>Reserved now</b>') + '</span><span class="st"><b>Next: ' + esc(nb.who) + ' ' + tfmt(nb.a) + ' – ' + tfmt(nb.b) + '</b></span>'; } }
     if (h) { cls = h.st === "dirty" ? "dirty" : "clean"; body = '<span class="st"><b>' + (h.st === "dirty" ? "Needs cleaning" : "Cleaning now") + '</b></span><span class="st">Since ' + tfmt(h.st === "dirty" ? h.since : h.cs) + '</span>'; }
@@ -4841,8 +4847,8 @@ const defFig=b=>b==="farwaniya"?"f":"m";
     let r = "", c = "";
     for (let i = 1; i <= b.rooms; i++) r += cardHtml("r" + i, b);
     for (let i = 1; i <= CHAIRS; i++) c += cardHtml("c" + i, b);
-    return pendBanner() + '<div class="layout"><div style="display:grid;gap:12px;min-width:0"><p class="sub">Rooms</p><div class="board">' + r + '</div><p class="sub">Chairs (outside, no screen)</p><div class="board">' + c + '</div>' +
-      '<div class="legend"><span>Ready</span><span class="b">Waiting for therapist</span><span class="a">In session</span><span class="d">Needs cleaning</span><span class="y">Cleaning now</span></div></div><div id="side">' + sideHtml() + '</div></div>';
+    return pendBanner() + '<div class="layout"><div style="display:grid;gap:12px;min-width:0"><p class="sub">Rooms</p>' + batBar() + '<div class="board">' + r + '</div><p class="sub">Chairs (outside, no screen)</p><div class="board">' + c + '</div>' +
+      '<div class="legend"><span>Ready</span><span class="b">Waiting for therapist</span><span class="a">In session</span><span class="d">Needs cleaning</span><span class="y">Cleaning now</span></div></div><div id="side">' + sideHtml() + batBox() + '</div></div>';
   }
   function roomOpts(sel, here) {
     const b = branchObj(state.branch); let o = '<option value="0">This room</option>';
@@ -4962,6 +4968,116 @@ const defFig=b=>b==="farwaniya"?"f":"m";
     }
     return x + '</div>';
   }
+
+
+  /* ---------- Room tablet batteries (reported by each room tablet, see batteryReport) ----------
+     Badge on each room card, a summary line on Rooms, notices on every tab at 30% and 15%, a count on the Rooms tab,
+     and a "Room tablet" box when a room is opened. A tablet that has not reported for 10 min is shown as Offline. */
+  const BAT_LOW = 30, BAT_CRIT = 15, BAT_OFF = 10 * MIN;
+  (function batStyle() {
+    const st = document.createElement("style");
+    st.textContent = `
+.bat { display:inline-flex; align-items:center; gap:5px; font:600 12px/1 var(--font-body); padding:4px 7px 4px 6px; border-radius:999px; border:1px solid currentColor; color:var(--b-c); background:var(--b-bg); white-space:nowrap; flex:none }
+.bat svg { width:22px; height:12px; display:block } .bat.full { --b-c:#1f7a4a; --b-bg:#eef7f1 } .bat.mid { --b-c:#5f6b3a; --b-bg:#f3f4ea }
+.bat.low { --b-c:#a8431f; --b-bg:#fbeee8 } .bat.crit { --b-c:#fff; --b-bg:#b3361a; border-color:#b3361a } .bat.off { --b-c:#8a8178; --b-bg:#f4f1ea; font-weight:500 }
+.room .rn { align-items:center } .room .rnm { display:inline-flex; gap:8px; align-items:baseline; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+.batbar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; font-size:13.5px; color:var(--muted) }
+.batbar .chip { display:inline-flex; gap:6px; align-items:center; padding:6px 10px; border-radius:999px; border:1px solid var(--line); background:#fff; color:var(--fg) }
+.batbar .chip.r { border-color:#e4b9a9; background:#fbeee8; color:#8f3818 } .batbar .chip.g { border-color:#bfd9c8; background:#eef7f1; color:#1f6a41 }
+.batn { display:grid; gap:8px; margin:0 0 14px }
+.batn .n { display:grid; grid-template-columns:auto minmax(0,1fr) auto; gap:14px; align-items:center; padding:12px 14px; border-radius:14px; border:1px solid #e6b49f; background:#fdf1ea; color:#6d2a12; box-shadow:0 6px 18px rgba(80,40,20,.10); font-size:15px }
+.batn .n.crit { background:#b3361a; border-color:#b3361a; color:#fff } .batn .n b { font-weight:700 } .batn .n small { display:block; font-size:13px; opacity:.9; margin-top:2px }
+.batn .ic { width:38px; height:38px; border-radius:10px; display:grid; place-items:center; background:rgba(255,255,255,.55) } .batn .n.crit .ic { background:rgba(255,255,255,.18) } .batn .ic svg { width:26px; height:14px }
+.batn .acts { display:flex; flex-wrap:wrap; gap:8px; justify-content:flex-end } .batn button { font:600 13.5px var(--font-body); padding:8px 12px; border-radius:10px; border:1px solid currentColor; background:transparent; color:inherit; cursor:pointer }
+.batn button.p { background:#6d2a12; color:#fff; border-color:#6d2a12 } .batn .n.crit button.p { background:#fff; color:#b3361a; border-color:#fff }
+@media (max-width: 640px) { .batn .n { grid-template-columns:auto minmax(0,1fr) } .batn .acts { grid-column:1 / -1; justify-content:flex-start } }
+#views button .cnt { display:inline-grid; place-items:center; min-width:20px; height:20px; margin-inline-start:6px; padding:0 5px; border-radius:999px; background:#b3361a; color:#fff; font-size:12px; font-weight:700 }
+.batbox { margin-top:14px; padding:14px; border:1px solid var(--line); border-radius:12px; display:grid; gap:8px }
+.batbox h3 { margin:0; font-size:13px; letter-spacing:.06em; text-transform:uppercase; color:var(--muted) } .batbox p { margin:0; font-size:14px } .batbox .tip { color:#8f3818; font-weight:600 }
+.batbox .bat { font-size:20px; padding:8px 14px; justify-self:start } .batbox .bat svg { width:44px; height:24px }`;
+    document.head.appendChild(st);
+  })();
+  function devOf(n) {
+    const d = window.SC_DEV; if (!d || !state.branch) return null;
+    const x = d.rows.find(r => r.b === state.branch && r.r === n); if (!x) return null;
+    const ago = x.ago * 1000 + (Date.now() - d.got);
+    return { l: x.l, c: !!x.c, ago: ago, off: ago > BAT_OFF };
+  }
+  const batIcon = (l, c) => '<svg viewBox="0 0 24 12" aria-hidden="true"><rect x="0.6" y="0.6" width="20" height="10.8" rx="2.2" fill="none" stroke="currentColor" stroke-width="1.2"/><rect x="21.4" y="3.5" width="2" height="5" rx="0.8" fill="currentColor"/>' +
+    (l == null ? "" : '<rect x="2.2" y="2.2" width="' + (16.8 * l / 100).toFixed(1) + '" height="7.6" rx="1.1" fill="currentColor"/>') +
+    (c ? '<path d="M11.8 1.2 7.4 6.6h3l-1 4.2 4.6-5.6h-3.1z" fill="#fff" stroke="currentColor" stroke-width=".7"/>' : "") + "</svg>";
+  const batCls = t => t.off ? "off" : t.l < BAT_CRIT ? "crit" : t.l < BAT_LOW ? "low" : t.l < 60 ? "mid" : "full";
+  const agoTxt = ms => ms < 90000 ? "just now" : ms < 3600000 ? Math.round(ms / MIN) + " min ago" : Math.round(ms / 3600000) + " h ago";
+  function batPill(n) {
+    const t = devOf(n); if (!t) return "";
+    const title = t.off ? "Room tablet not reporting since " + agoTxt(t.ago) : "Room tablet battery" + (t.c ? ", charging" : "");
+    return '<span class="bat ' + batCls(t) + '" title="' + title + '">' + batIcon(t.off ? null : t.l, !t.off && t.c) + (t.off ? "Offline" : t.l + "%") + "</span>";
+  }
+  /* rooms whose tablet needs charging now: at or under 30%, not on the charger, still reporting */
+  function batNeed() {
+    const b = branchObj(state.branch); if (!b) return [];
+    const out = []; for (let i = 1; i <= b.rooms; i++) { const t = devOf(i); if (t && !t.off && !t.c && t.l <= BAT_LOW) out.push({ n: i, t: t }); }
+    return out.sort((x, y) => x.t.l - y.t.l);
+  }
+  function batBar() {
+    const b = branchObj(state.branch); if (!b) return "";
+    let any = false; const off = [], chg = [];
+    for (let i = 1; i <= b.rooms; i++) { const t = devOf(i); if (!t) continue; any = true; if (t.off) off.push(i); else if (t.c) chg.push(i); }
+    if (!any) return "";
+    const need = batNeed();
+    return '<div class="batbar"><span>Room tablets:</span>' +
+      (need.length ? '<span class="chip r">⚠ ' + need.length + (need.length === 1 ? " needs" : " need") + " charging · " + need.map(x => esc(lab("r" + x.n)) + " (" + x.t.l + "%)").join(", ") + "</span>" : '<span class="chip g">All charged enough</span>') +
+      (off.length ? '<span class="chip">' + off.length + " offline · " + off.map(n => esc(lab("r" + n))).join(", ") + "</span>" : "") +
+      (chg.length ? '<span class="chip g">⚡ ' + chg.length + " charging</span>" : "") + "</div>";
+  }
+  /* "OK" hides a notice until the battery drops to the next level (15%); "Remind me in 10 min" hides it for 10 minutes. */
+  const BAT_ACK = "sc-batack";
+  const batAcks = () => { try { return JSON.parse(lsGet(BAT_ACK) || "{}"); } catch (e) { return {}; } };
+  const batAckSet = a => lsSet(BAT_ACK, JSON.stringify(a));
+  function batAdvice(n) {
+    const k = "r" + n, v = V()[k], h = H()[k];
+    if (v && v.status !== "done") return "A guest is in " + lab(k) + " now — charge it as soon as the room is free.";
+    if (h) return lab(k) + " is being cleaned — a good moment to plug it in.";
+    return lab(k) + " is free now — a good time to plug it in.";
+  }
+  function batNotices() {
+    if (!state.user || !state.branch) return "";
+    const acks = batAcks(), now = Date.now(); let changed = false;
+    Object.keys(acks).forEach(key => { const [bid, n] = key.split("|"), t = bid === state.branch ? devOf(Number(n)) : null; if (bid === state.branch && (!t || t.c || t.l > BAT_LOW)) { delete acks[key]; changed = true; } });
+    if (changed) batAckSet(acks);
+    const list = batNeed().filter(x => { const a = acks[state.branch + "|" + x.n], band = x.t.l <= BAT_CRIT ? 15 : 30; return !(a && a.band === band && (!a.until || now < a.until)); });
+    if (!list.length) return "";
+    return '<div class="batn" role="status">' + list.map(x => {
+      const crit = x.t.l <= BAT_CRIT, k = "r" + x.n;
+      return '<div class="n' + (crit ? " crit" : "") + '"><span class="ic">' + batIcon(x.t.l, false) + '</span><div><b>' + esc(lab(k)) + " tablet is " + (crit ? "at " + x.t.l + "% and not charging." : "down to " + x.t.l + "%.") + "</b><small>" +
+        (crit ? "It may switch off soon. " : "") + esc(batAdvice(x.n)) + '</small></div><div class="acts"><button type="button" class="p" data-batshow="' + x.n + '">Show room</button>' +
+        (crit ? '<button type="button" data-batsnooze="' + x.n + '">Remind me in 10 min</button>' : '<button type="button" data-batok="' + x.n + '">OK</button>') + "</div></div>";
+    }).join("") + "</div>";
+  }
+  const batCount = () => (state.user && state.branch ? batNeed().length : 0);
+  /* called by renderChrome on every redraw: notices above the page, and the count on the Rooms tab */
+  function batChrome() {
+    const box = $("batn"); if (box) box.innerHTML = mode === "rec" ? batNotices() : "";
+    const n = batCount(), rb = document.querySelector('#views [data-view="rooms"]');
+    if (rb && n) rb.insertAdjacentHTML("beforeend", '<span class="cnt" title="Room tablets that need charging">' + n + "</span>");
+  }
+  function batBox() {
+    if (!state.room || !isRoom(state.room)) return "";
+    const n = Number(state.room.slice(1)), t = devOf(n);
+    if (!t) return '<div class="batbox"><h3>Room tablet</h3><p>No battery report yet. The tablet reports once it is open on the Spa Corner page in Chrome.</p></div>';
+    return '<div class="batbox"><h3>Room tablet</h3>' + batPill(n) + "<p>" + (t.off ? "Not reporting since " + agoTxt(t.ago) + ". Check the tablet is on and open on the Spa Corner page." : (t.c ? "Charging" : "Not charging") + " · updated " + agoTxt(t.ago)) + "</p>" +
+      (!t.off && !t.c && t.l <= BAT_LOW ? '<p class="tip">' + esc(batAdvice(n)) + "</p>" : "") + "</div>";
+  }
+  document.addEventListener("click", e => {
+    const t = e.target.closest && e.target.closest("[data-batok],[data-batsnooze],[data-batshow]"); if (!t || mode !== "rec") return;
+    const n = Number(t.getAttribute("data-batok") || t.getAttribute("data-batsnooze") || t.getAttribute("data-batshow")), d = devOf(n);
+    if (t.hasAttribute("data-batshow")) { state.view = "rooms"; state.room = "r" + n; render(); return; }
+    const acks = batAcks(), band = d && d.l <= BAT_CRIT ? 15 : 30;
+    acks[state.branch + "|" + n] = { band: band, until: t.hasAttribute("data-batsnooze") ? Date.now() + 10 * MIN : 0 };
+    batAckSet(acks); render();
+  });
+  window.SC_ON_DEV = () => { if (mode === "rec" && state.user) renderIfIdle(); };
+  setInterval(() => { if (mode === "rec" && state.user && window.SC_DEV) renderIfIdle(); }, 60000);   /* "Offline" and snoozes follow the clock */
   const LOG_ST = { waiting: "Waiting", active: "In session", done: "Done", cancelled: "Cancelled", moved: "Moved on", expired: "Ended automatically" };
   const waitMin = r => (r.began && r.assigned ? Math.round((r.began - r.assigned) / MIN * 10) / 10 : "");
   const sessMin = r => (r.began && r.end ? Math.round((r.end - r.began) / MIN * 10) / 10 : "");
@@ -5935,6 +6051,25 @@ const defFig=b=>b==="farwaniya"?"f":"m";
     document.addEventListener("pointerdown", () => { take(); }, true);
     setInterval(() => { if (want()) take(); else drop(); }, 15000);
     setTimeout(take, 1000);
+  })();
+
+  /* Room tablet battery -> server, so reception sees which tablet needs charging (Chrome's Battery Status API).
+     Sent at start, when the charger is plugged in or out, when the level moves 2% or more, and at least every 5 min. */
+  (function batteryReport() {
+    if (!navigator.getBattery) return;
+    let bat = null, last = { k: "", l: -1, c: null, t: 0 };
+    const send = force => {
+      if (!(mode === "tab" && tab.pair && bat && window.SC_AUTH)) return;
+      const k = tab.pair.branch + "-" + tab.pair.room, l = Math.round(bat.level * 100), c = !!bat.charging, n = Date.now();
+      if (!force && k === last.k && c === last.c && Math.abs(l - last.l) < 2 && n - last.t < 5 * 60000) return;
+      last = { k, l, c, t: n };
+      window.SC_AUTH("beat", [tab.pair.room, l, c]).catch(() => { last.t = 0; last.l = -1; });
+    };
+    navigator.getBattery().then(b => {
+      bat = b; b.addEventListener("levelchange", () => send(false)); b.addEventListener("chargingchange", () => send(true)); send(true);
+    }).catch(() => {});
+    setInterval(() => send(false), 60000);
+    window.SC_BEAT_NOW = () => send(true);
   })();
   /* connect to the shared database, then start */
   setInterval(setLive, 2000);
