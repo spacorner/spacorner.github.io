@@ -442,6 +442,14 @@ textarea { font: inherit; }
 .flist li { display: grid; grid-template-columns: 52px 1fr; gap: 8px; align-items: baseline; }
 .flist em { font-style: normal; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--gold, #c9a45a); }
 .flist span { font-weight: 600; }
+
+/* message from a loved one, under the guest's name on the room tablet */
+#tablet .gmsg { margin: 14px auto 0; max-width: min(640px, 90%); font-size: clamp(1.15rem, 2.6vw, 1.7rem); line-height: 1.4; font-weight: 300; font-style: italic; color: var(--accent); text-align: center; letter-spacing: 0.01em; overflow-wrap: anywhere; }
+#tablet .gmsg::before { content: "\201C"; opacity: .55; margin-inline-end: .15em; }
+#tablet .gmsg::after { content: "\201D"; opacity: .55; margin-inline-start: .15em; }
+#tablet .gmsg[dir="rtl"] { font-style: normal; font-family: "Hanimation Arabic", system-ui, sans-serif; }
+#tablet .gmsg[dir="rtl"]::before { content: "\201D"; } #tablet .gmsg[dir="rtl"]::after { content: "\201C"; }
+.field label.lbl small { font-weight: 400; opacity: .7; }
 .ciq { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
 .ciq .ci { background: var(--surface-2); border: 1px solid var(--line); border-radius: 12px; padding: 12px; display: grid; gap: 8px; }
 .ciq .ci.done { border-color: var(--ok); }
@@ -4540,7 +4548,7 @@ three/build/three.module.js:
   const sessionEnd = v => { const tt = stepTimes(v); return tt.length ? tt[tt.length - 1].en : stBase(v); };
   const planned = v => v.steps.reduce((n, s) => n + stMin(s, v.loc), 0);
   const lockedCount = v => { if (!v || v.status !== "active") return 0; const now = Date.now(); return stepTimes(v).filter(t => t.b <= now).length; };
-  const blankDraft = pend => { state.prefOpen = false; const pc = pend !== false && state.pendCi && state.pendCi.branch === state.branch ? state.pendCi : null; if (pc) return { ci: pc.id, title: pc.title, guest: pc.guest, steps: pc.steps.map(x => ({ s: x.s, staff: x.staff || "" })), prefs: Object.assign({}, pc.prefs, { focus: (pc.prefs.focus || []).slice() }) }; return { title: defTitle(state.branch), guest: "", steps: [], prefs: { pressure: "medium", focus: [], fig: defFig(state.branch), notes: "", health: "no", healthNote: "", disc: "no" } }; };
+  const blankDraft = pend => { state.prefOpen = false; const pc = pend !== false && state.pendCi && state.pendCi.branch === state.branch ? state.pendCi : null; if (pc) return { ci: pc.id, title: pc.title, guest: pc.guest, msg: pc.msg || "", steps: pc.steps.map(x => ({ s: x.s, staff: x.staff || "" })), prefs: Object.assign({}, pc.prefs, { focus: (pc.prefs.focus || []).slice() }) }; return { title: defTitle(state.branch), guest: "", steps: [], prefs: { pressure: "medium", focus: [], fig: defFig(state.branch), notes: "", health: "no", healthNote: "", disc: "no" } }; };
   const canGo = d => !!d.guest.trim() && d.steps.length > 0 && d.steps.every(s => s.s !== "" && s.s != null) && (!roomWarns(d).length || (!!d.ovr && d.ovrSig === roomWarns(d).join("|")));
   /* Which rooms a plan needs and when. A facial takes no time and needs no room slot here; every other service needs its own room (or this one) for its window. */
   function occ(steps, base, loc) {
@@ -4650,11 +4658,11 @@ function focusText(sel){
 const defFig=b=>b==="farwaniya"?"f":"m";
   const enrich = st => ({ s: st.s, staff: st.staff || "", en: svcOf(st.s).en, ar: AR_NAME[svcOf(st.s).en] || svcOf(st.s).en, min: svcOf(st.s).min, room: st.room || 0 });
   function stayDoc(b, k, v) {
-    return { branch: b, loc: k, room: isRoom(k) ? Number(k.slice(1)) : 0, title: v.title, guest: v.guest, steps: v.steps.map(enrich), prefs: v.prefs, status: v.status,
+    return { branch: b, loc: k, room: isRoom(k) ? Number(k.slice(1)) : 0, title: v.title, guest: v.guest, msg: v.msg || "", steps: v.steps.map(enrich), prefs: v.prefs, status: v.status,
       assigned: v.assigned, start: v.assigned, began: v.began || null, ended: v.ended || null, by: v.by || null, endBy: v.endBy || null,
       log: v.log || [], prev: v.prev || [], logId: v.logId, rated: !!v.rated, noRate: !!v.noRate, blk: v.blk || null, updatedAt: Date.now() };
   }
-  const fromDoc = v => ({ loc: v.loc, title: v.title || "none", guest: v.guest || "", steps: (v.steps || []).map(x => ({ s: x.s, staff: x.staff || "", room: x.room || 0 })),
+  const fromDoc = v => ({ loc: v.loc, title: v.title || "none", guest: v.guest || "", msg: v.msg || "", steps: (v.steps || []).map(x => ({ s: x.s, staff: x.staff || "", room: x.room || 0 })),
     prefs: Object.assign({ pressure: "medium", focus: [], fig: "m", notes: "", health: "no", healthNote: "", disc: "no" }, v.prefs || {}), status: v.status, assigned: v.assigned, start: v.assigned, began: v.began || null,
     ended: v.ended || null, by: v.by || null, endBy: v.endBy || null, log: v.log || [], prev: v.prev || [], logId: v.logId, rated: !!v.rated, noRate: !!v.noRate, blk: v.blk || null });
   const logId = (b, k, t) => vid(b, k) + "-" + t;
@@ -4684,7 +4692,7 @@ const defFig=b=>b==="farwaniya"?"f":"m";
     const pl = d.steps.map(s => s.room || (isFacial(s) ? 0 : codeOf(state.room)));   // "This room" = the room or chair reception opened
     const fi = d.steps.findIndex(s => !isFacial(s)); if (fi >= 0 && pl[fi] > 0 && isReady(locOf(pl[fi]))) k = locOf(pl[fi]);
     const room = isRoom(k), kn = codeOf(k);
-    const v = { title: d.title, guest: d.guest.trim(), steps: d.steps.map((s, i) => ({ s: s.s, staff: s.staff || "", room: pl[i] === kn ? 0 : pl[i] })), prefs: Object.assign({}, d.prefs, { focus: d.prefs.focus.slice() }),
+    const v = { title: d.title, guest: d.guest.trim(), msg: (d.msg || "").trim(), steps: d.steps.map((s, i) => ({ s: s.s, staff: s.staff || "", room: pl[i] === kn ? 0 : pl[i] })), prefs: Object.assign({}, d.prefs, { focus: d.prefs.focus.slice() }),
       status: room ? "waiting" : "active", assigned: n, began: room ? null : n, by: room ? null : "reception", ended: null, log: [], prev: [], logId: logId(b, k, n), rated: false, noRate: !room };
     if (H(b)[k]) dropHold(b, k);
     putStay(b, k, v); logSet(b, v, v.status); state.room = k;
@@ -4692,7 +4700,7 @@ const defFig=b=>b==="farwaniya"?"f":"m";
     state.draft = null; state.force = null; render();
   }
   function startEdit() { const v = cur(); state.prefOpen = false; state.edit = true; state.move = null;
-    state.draft = { title: v.title, guest: v.guest, steps: v.steps.map(s => ({ s: s.s, staff: s.staff, room: s.room || 0 })), prefs: Object.assign({}, v.prefs, { focus: v.prefs.focus.slice() }), room: isRoom(state.room) ? codeOf(state.room) : undefined };
+    state.draft = { title: v.title, guest: v.guest, msg: v.msg || "", steps: v.steps.map(s => ({ s: s.s, staff: s.staff, room: s.room || 0 })), prefs: Object.assign({}, v.prefs, { focus: v.prefs.focus.slice() }), room: isRoom(state.room) ? codeOf(state.room) : undefined };
     render(); }
   function cancelEdit() { state.edit = false; state.draft = null; render(); }
   function diffText(v, d) {
@@ -4715,7 +4723,7 @@ const defFig=b=>b==="farwaniya"?"f":"m";
   }
   function saveEdit() {
     const b = state.branch, k = state.room, v = cur(), d = state.draft, ch = diffText(v, d), n = Date.now();
-    const patch = { title: d.title, guest: d.guest.trim(), steps: d.steps.map(s => ({ s: s.s, staff: s.staff || "", room: s.room || 0 })), prefs: Object.assign({}, d.prefs, { focus: d.prefs.focus.slice() }), log: v.log.concat(ch.map(t => ({ t: n, text: t }))) };
+    const patch = { title: d.title, guest: d.guest.trim(), msg: (d.msg || "").trim(), steps: d.steps.map(s => ({ s: s.s, staff: s.staff || "", room: s.room || 0 })), prefs: Object.assign({}, d.prefs, { focus: d.prefs.focus.slice() }), log: v.log.concat(ch.map(t => ({ t: n, text: t }))) };
     if (d.room !== undefined && locOf(d.room) !== k) {
       const nk = locOf(d.room); if (!isRoom(nk)) Object.assign(patch, { status: "active", began: n, by: "reception", noRate: true }); // a chair has no screen: the clock starts now
       Object.assign(v, patch); dropStay(b, k); if (H(b)[nk]) dropHold(b, nk); putStay(b, nk, v); state.room = nk;
@@ -4735,7 +4743,7 @@ const defFig=b=>b==="farwaniya"?"f":"m";
     const rest = v.steps.slice(L).map(x => ({ s: x.s, staff: x.staff || "", room: (x.room === orig || x.room === nr) ? 0 : (x.room || 0) }));
     const did = v.steps.slice(0, L).filter(s => !isFacial(s)).map(s => svcOf(s.s).en).join(", ");
     const entry = { loc: lab(k, b), a: v.began || v.assigned, b: n, text: did || "service done" };
-    const nv = { title: v.title, guest: v.guest, steps: rest, prefs: Object.assign({}, v.prefs, { focus: (v.prefs.focus || []).slice() }), status: toRoom ? "waiting" : "active", assigned: n, began: toRoom ? null : n, by: toRoom ? null : "reception", ended: null, endBy: null,
+    const nv = { title: v.title, guest: v.guest, msg: v.msg || "", steps: rest, prefs: Object.assign({}, v.prefs, { focus: (v.prefs.focus || []).slice() }), status: toRoom ? "waiting" : "active", assigned: n, began: toRoom ? null : n, by: toRoom ? null : "reception", ended: null, endBy: null,
       log: (v.log || []).concat({ t: n, text: "Next service: " + lab(k, b) + " to " + lab(nk, b) }), prev: (v.prev || []).concat(entry), logId: logId(b, nk, n), rated: false, noRate: !toRoom, blk: null };
     logUp(v, { status: "done", end: n });
     if (isRoom(k)) putHold(b, k, { st: "dirty", since: n });
@@ -4766,7 +4774,7 @@ const defFig=b=>b==="farwaniya"?"f":"m";
     const keep = v.steps.filter((s, i) => !m.take[i]).map(s => svcOf(s.s).en).join(", ");
     const steps = v.steps.filter((s, i) => m.take[i]).concat(m.extra).map(x => ({ s: x.s, staff: x.staff || "", room: x.room || 0 }));
     const entry = { loc: lab(old), a: v.began || v.assigned, b: v.ended || n, text: keep || "moved on" };
-    const nv = { title: v.title, guest: v.guest, steps, prefs: Object.assign({}, v.prefs, { focus: v.prefs.focus.slice() }), status: toRoom ? "waiting" : "active", assigned: n, began: toRoom ? null : n, by: toRoom ? null : "reception",
+    const nv = { title: v.title, guest: v.guest, msg: v.msg || "", steps, prefs: Object.assign({}, v.prefs, { focus: v.prefs.focus.slice() }), status: toRoom ? "waiting" : "active", assigned: n, began: toRoom ? null : n, by: toRoom ? null : "reception",
       ended: null, log: v.log.concat({ t: n, text: "Moved from " + lab(old) + " to " + lab(dest) }), prev: v.prev.concat(entry), logId: logId(b, dest, n), rated: false, noRate: !toRoom };
     logUp(v, { status: "moved", end: n });
     if (isRoom(old)) putHold(b, old, { st: "dirty", since: n });
@@ -4891,6 +4899,7 @@ const defFig=b=>b==="farwaniya"?"f":"m";
     const d = state.draft, v = cur(), lock = editing ? lockedCount(v) : 0, b = branchObj(state.branch), room = isRoom(state.room);
     const total = d.steps.reduce((n, s) => n + stMin(s, state.room), 0), n = d.steps.length;
     let h = '<div class="field"><span class="lbl">Title and guest first name</span><div class="tnrow"><div class="seg" id="ttl"' + (hasAr(d.guest) ? ' style="opacity:.35"' : "") + '>' + titleOpts(state.branch).map(x => '<button type="button" data-ti="' + x[0] + '" aria-pressed="' + (d.title === x[0]) + '">' + x[1] + '</button>').join("") + '</div><input id="d-guest" aria-label="Guest first name" value="' + esc(d.guest) + '" maxlength="24" autocomplete="off" placeholder="First name only"></div></div>';
+    h += '<div class="field"><label for="d-msg" class="lbl">Message under the name <small>(optional · from a loved one, shown on the room screen)</small></label><textarea id="d-msg" rows="2" maxlength="140" autocomplete="off" placeholder="e.g. Enjoy every minute, you deserve it — Sara">' + esc(d.msg || "") + '</textarea></div>';
     h += '<p class="note">' + (room ? "Room screen will say" : "Shown as") + ': <b id="nm">' + (d.guest.trim() ? esc(displayName(d, "en")) : esc(((TITLE[d.title] || TITLE.mr).en + " …").trim())) + '</b></p>';
     if (editing && room && v.status === "waiting") {
       const free = []; for (let i = 1; i <= b.rooms; i++) if ("r" + i === state.room || isReady("r" + i)) free.push("r" + i);
@@ -5293,6 +5302,7 @@ const defFig=b=>b==="farwaniya"?"f":"m";
       const n = $("nm"); if (n) n.textContent = t.value.trim() ? displayName(d, "en") : ((TITLE[d.title] || TITLE.mr).en + " …").trim();
     }
     if (t.id === "d-notes") d.prefs.notes = t.value;
+    if (t.id === "d-msg") d.msg = t.value;
     if (t.id === "d-hnote") d.prefs.healthNote = t.value;
   });
   document.addEventListener("submit", e => {
@@ -5495,18 +5505,19 @@ const defFig=b=>b==="farwaniya"?"f":"m";
       if (mode === "tab") tabRender();
     }, () => {});
   }
+  const gmsg = v => v.msg ? '<p class="gmsg"' + (hasAr(v.msg) ? ' dir="rtl" lang="ar"' : '') + '>' + esc(v.msg) + '</p>' : '';   /* a few words from a loved one, under the name */
   function tabMid(v, h, t, head) {
     const n = v ? esc(displayName(v, tab.lang)) : "";
     if (!v && h) return head + '<section class="hello"><h1>' + t.prepT + '</h1><p class="lead">' + t.prepS + '</p></section>';
     if (!v) { const nb = tab.pair ? nextBooking(tab.pair.branch, "r" + tab.pair.room) : null; return head + '<section class="hello"><h1>' + t.idleTitle + '</h1><p class="lead">' + t.idleSub + '</p>' + (nb ? '<p class="lead" style="margin-top:18px;opacity:.75">' + t.nextG + ' · ' + esc(nb.who) + ' · ' + tfmtL(nb.a) + '</p>' : "") + '</section>'; }
     const nm = s => esc(tab.lang === "ar" ? (AR_NAME[svcOf(s.s).en] || svcOf(s.s).en) : svcOf(s.s).en);
     if (v.status === "waiting")
-      return head + '<section class="hello"><p class="hi">' + t.hello + '</p><h1 class="gname">' + n + '</h1></section>' +
+      return head + '<section class="hello"><p class="hi">' + t.hello + '</p><h1 class="gname">' + n + '</h1>' + gmsg(v) + '</section>' +
         '<section class="plist"><ul>' + v.steps.map(s => '<li><span class="nm">' + nm(s) + '</span><span class="t">' + (offRoom(s, v.loc) ? (s.room ? esc(lab(locOf(s.room), tab.pair.branch)) : t.cdElse) : svcOf(s.s).min + ' ' + t.min) + '</span></li>').join("") + '</ul></section>' + tabPrefs(v, t);
     if (v.status === "active") return countdownHtml(v, t, head, n);
     if (v.status === "never") {
       const tt = stepTimes(v);
-      return head + '<section class="hello"><p class="eyebrow">' + t.begun + '</p><p class="hi">' + t.hello + '</p><h1 class="gname">' + n + '</h1></section>' +
+      return head + '<section class="hello"><p class="eyebrow">' + t.begun + '</p><p class="hi">' + t.hello + '</p><h1 class="gname">' + n + '</h1>' + gmsg(v) + '</section>' +
         '<section class="plist"><ul>' + v.steps.map((s, i) => '<li><span class="nm">' + nm(s) + '</span><span class="t">' + tfmtL(tt[i].a) + ' – ' + tfmtL(tt[i].b) + '</span></li>').join("") + '</ul><p class="tot">' + t.endsAt + ' ' + tfmtL(tt[tt.length - 1].b) + '</p></section>' + tabPrefs(v, t);
     }
     if (!v.rated && tab.dismissed !== v.start)
@@ -5781,7 +5792,7 @@ const defFig=b=>b==="farwaniya"?"f":"m";
   function ciSend(loc) {
     const d = state.draft; if (!d || !canGo(d) || !DB) return;
     const n = Date.now(), id = state.branch + "_" + n;
-    DB.doc("checkins/" + id).set({ id, branch: state.branch, title: d.title, guest: d.guest.trim(), steps: d.steps.map(s => ({ s: s.s, staff: s.staff || "" })),
+    DB.doc("checkins/" + id).set({ id, branch: state.branch, title: d.title, guest: d.guest.trim(), msg: (d.msg || "").trim(), steps: d.steps.map(s => ({ s: s.s, staff: s.staff || "" })),
       prefs: Object.assign({}, d.prefs, { focus: d.prefs.focus.slice() }), st: "sent", at: n, loc: loc || null }).catch(() => {});
     state.draft = null; if (loc) { state.room = null; resetSel(); } render();
   }
@@ -5791,6 +5802,7 @@ const defFig=b=>b==="farwaniya"?"f":"m";
     const d = state.draft, n = d.steps.length, total = d.steps.reduce((m, s) => m + svcOf(s.s).min, 0);
     let f = '<div class="panel"><h2>New check-in</h2><p class="note">Enter the guest and services from Fresha. No room yet. The guest then scans the QR code on the desk and fills in the form on their own phone.</p>';
     f += '<div class="field"><span class="lbl">Title and guest first name</span><div class="tnrow"><div class="seg" id="ttl"' + (hasAr(d.guest) ? ' style="opacity:.35"' : "") + '>' + titleOpts(b).map(x => '<button type="button" data-ti="' + x[0] + '" aria-pressed="' + (d.title === x[0]) + '">' + x[1] + '</button>').join("") + '</div><input id="d-guest" aria-label="Guest first name" value="' + esc(d.guest) + '" maxlength="24" autocomplete="off" placeholder="First name only"></div></div>';
+    f += '<div class="field"><label for="d-msg" class="lbl">Message under the name <small>(optional · from a loved one, shown on the room screen)</small></label><textarea id="d-msg" rows="2" maxlength="140" autocomplete="off" placeholder="e.g. Enjoy every minute, you deserve it — Sara">' + esc(d.msg || "") + '</textarea></div>';
     f += '<div class="row"><h3>Service order</h3><button type="button" class="btn ghost" data-act="add">Add service</button></div>';
     f += n ? '<ol class="steps">' + d.steps.map((st, i) => svcRowHtml(st, i, false, DATTR, n)).join("") + '</ol>' : '<p class="empty">No services yet. Add them in the order the guest wants them.</p>';
     f += '<p class="sum">' + n + (n === 1 ? " service" : " services") + ' · ' + dur(total) + ' planned.</p>';
